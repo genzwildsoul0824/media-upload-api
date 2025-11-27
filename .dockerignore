@@ -1,0 +1,17 @@
+var/
+vendor/
+.git/
+.gitignore
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+node_modules/
+

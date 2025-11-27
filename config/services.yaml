@@ -1,0 +1,58 @@
+parameters:
+    upload.chunk_size: '%env(int:UPLOAD_CHUNK_SIZE)%'
+    upload.max_file_size: '%env(int:UPLOAD_MAX_FILE_SIZE)%'
+    upload.chunk_timeout: '%env(int:UPLOAD_CHUNK_TIMEOUT)%'
+    upload.file_retention_days: '%env(int:UPLOAD_FILE_RETENTION_DAYS)%'
+    upload.max_concurrent: '%env(int:UPLOAD_MAX_CONCURRENT)%'
+    upload.rate_limit: '%env(int:UPLOAD_RATE_LIMIT)%'
+    storage.path: '%env(resolve:STORAGE_PATH)%'
+    chunk.storage.path: '%env(resolve:CHUNK_STORAGE_PATH)%'
+    allowed.image.types: '%env(csv:ALLOWED_IMAGE_TYPES)%'
+    allowed.video.types: '%env(csv:ALLOWED_VIDEO_TYPES)%'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+
+    App\Controller\:
+        resource: '../src/Controller/'
+        tags: ['controller.service_arguments']
+
+    # Redis Service
+    Predis\ClientInterface:
+        class: Predis\Client
+        arguments:
+            - '%env(REDIS_URL)%'
+
+    # ChunkStorageService
+    App\Service\ChunkStorageService:
+        arguments:
+            $chunkStoragePath: '%chunk.storage.path%'
+            $chunkTimeout: '%upload.chunk_timeout%'
+
+    # StorageService
+    App\Service\StorageService:
+        arguments:
+            $storagePath: '%storage.path%'
+            $fileRetentionDays: '%upload.file_retention_days%'
+
+    # FileValidationService
+    App\Service\FileValidationService:
+        arguments:
+            $allowedImageTypes: '%allowed.image.types%'
+            $allowedVideoTypes: '%allowed.video.types%'
+            $maxFileSize: '%upload.max_file_size%'
+
+    # RateLimitService
+    App\Service\RateLimitService:
+        arguments:
+            $rateLimit: '%upload.rate_limit%'
+
