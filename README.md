@@ -415,6 +415,18 @@ df -h
 php bin/console app:cleanup
 ```
 
+## Future Improvements
+
+### Testing
+- Add integration tests for chunk upload flow
+- Add E2E tests for complete upload lifecycle
+- Add performance tests for concurrent uploads
+- Add load testing for rate limiting
+- Add tests for file validation edge cases
+- Add tests for cleanup command
+- Increase test coverage to >90%
+- Add API contract testing
+
 ## License
 
 MIT
