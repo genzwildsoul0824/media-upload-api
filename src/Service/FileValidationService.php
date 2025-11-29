@@ -89,7 +89,9 @@ class FileValidationService
         }
 
         foreach (self::MAGIC_NUMBERS[$expectedMimeType] as $magicNumber) {
-            if (str_starts_with($headerHex, $magicNumber)) {
+            // Some formats (like MP4) have a size prefix before the magic (e.g. "....ftyp"),
+            // so we allow the magic number to appear anywhere in the first bytes we read.
+            if (str_starts_with($headerHex, $magicNumber) || str_contains($headerHex, $magicNumber)) {
                 return true;
             }
         }

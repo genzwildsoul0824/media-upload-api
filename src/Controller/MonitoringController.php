@@ -42,19 +42,35 @@ class MonitoringController extends AbstractController
                 }
             }
 
-            // Calculate success rate (simplified - in production, use dedicated metrics)
-            $totalUploads = (int)$this->redis->get('metrics:total_uploads') ?: 0;
-            $successfulUploads = (int)$this->redis->get('metrics:successful_uploads') ?: 0;
-            $successRate = $totalUploads > 0 ? ($successfulUploads / $totalUploads) * 100 : 0;
+            // Get and calculate metrics
+            $totalUploadsValue = $this->redis->get('metrics:total_uploads');
+            $successfulUploadsValue = $this->redis->get('metrics:successful_uploads');
+            
+            // Ensure we have integers, defaulting to 0 if keys don't exist
+            $totalUploads = 0;
+            $successfulUploads = 0;
+            
+            if ($totalUploadsValue !== null && $totalUploadsValue !== false) {
+                $totalUploads = (int)$totalUploadsValue;
+            }
+            
+            if ($successfulUploadsValue !== null && $successfulUploadsValue !== false) {
+                $successfulUploads = (int)$successfulUploadsValue;
+            }
+            
+            // Calculate success rate
+            $successRate = $totalUploads > 0 
+                ? round(($successfulUploads / $totalUploads) * 100, 2) 
+                : 0.0;
 
             return $this->json([
                 'storage' => $storageStats,
                 'active_uploads' => $activeUploads,
                 'upload_details' => $uploadDetails,
                 'metrics' => [
-                    'total_uploads' => $totalUploads,
-                    'successful_uploads' => $successfulUploads,
-                    'success_rate' => round($successRate, 2)
+                    'total_uploads' => (int)$totalUploads,
+                    'successful_uploads' => (int)$successfulUploads,
+                    'success_rate' => (float)$successRate
                 ],
                 'timestamp' => time()
             ]);
