@@ -12,11 +12,19 @@ when@dev:
                 path: "%kernel.logs_dir%/%kernel.environment%.log"
                 level: debug
                 channels: ["!event"]
+
+            # NEW: log everything to Docker stdout
+            stdout:
+                type: stream
+                path: "php://stdout"
+                level: debug
+
             upload:
                 type: stream
                 path: "%kernel.logs_dir%/upload.log"
                 level: debug
                 channels: ["upload"]
+
             console:
                 type: console
                 process_psr_3_messages: false
@@ -25,27 +33,35 @@ when@dev:
 when@prod:
     monolog:
         handlers:
+            # NEW: always log to Docker stdout
+            stdout:
+                type: stream
+                path: "php://stdout"
+                level: info
+
             main:
                 type: fingers_crossed
                 action_level: error
                 handler: nested
                 excluded_http_codes: [404, 405]
                 buffer_size: 50
+
             nested:
                 type: rotating_file
                 path: "%kernel.logs_dir%/%kernel.environment%.log"
                 level: debug
                 max_files: 30
+
             upload:
                 type: rotating_file
                 path: "%kernel.logs_dir%/upload.log"
                 level: info
                 max_files: 30
                 channels: ["upload"]
+
             security:
                 type: rotating_file
                 path: "%kernel.logs_dir%/security.log"
                 level: info
                 max_files: 30
                 channels: ["security"]
-
