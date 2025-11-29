@@ -6,26 +6,30 @@ services:
     container_name: media-upload-backend
     ports:
       - "8000:8000"
+
     volumes:
       - ./var/uploads:/var/www/html/var/uploads
       - ./var/chunks:/var/www/html/var/chunks
       - ./var/log:/var/www/html/var/log
       - ./var/cache:/var/www/html/var/cache
+
+
     environment:
-      - APP_ENV=${APP_ENV:-dev}
-      - APP_SECRET=${APP_SECRET:-your-secret-key-change-in-production}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///%kernel.project_dir%/var/data.db}
-      - REDIS_URL=redis://redis:6379
-      - UPLOAD_CHUNK_SIZE=${UPLOAD_CHUNK_SIZE:-1048576}
-      - UPLOAD_MAX_FILE_SIZE=${UPLOAD_MAX_FILE_SIZE:-524288000}
-      - UPLOAD_CHUNK_TIMEOUT=${UPLOAD_CHUNK_TIMEOUT:-1800}
-      - UPLOAD_FILE_RETENTION_DAYS=${UPLOAD_FILE_RETENTION_DAYS:-30}
-      - UPLOAD_MAX_CONCURRENT=${UPLOAD_MAX_CONCURRENT:-3}
-      - UPLOAD_RATE_LIMIT=${UPLOAD_RATE_LIMIT:-10}
-      - STORAGE_PATH=/var/www/html/var/uploads
-      - CHUNK_STORAGE_PATH=/var/www/html/var/chunks
-      - ALLOWED_IMAGE_TYPES=${ALLOWED_IMAGE_TYPES:-image/jpeg,image/png,image/gif,image/webp}
-      - ALLOWED_VIDEO_TYPES=${ALLOWED_VIDEO_TYPES:-video/mp4,video/mpeg,video/quicktime,video/webm}
+      APP_ENV: ${APP_ENV:-dev}
+      APP_SECRET: ${APP_SECRET:-your-secret-key-change-in-production}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///%kernel.project_dir%/var/data.db}
+      REDIS_URL: redis://redis:6379
+      UPLOAD_CHUNK_SIZE: ${UPLOAD_CHUNK_SIZE:-1048576}
+      UPLOAD_MAX_FILE_SIZE: ${UPLOAD_MAX_FILE_SIZE:-524288000}
+      UPLOAD_CHUNK_TIMEOUT: ${UPLOAD_CHUNK_TIMEOUT:-1800}
+      UPLOAD_FILE_RETENTION_DAYS: ${UPLOAD_FILE_RETENTION_DAYS:-30}
+      UPLOAD_MAX_CONCURRENT: ${UPLOAD_MAX_CONCURRENT:-3}
+      UPLOAD_RATE_LIMIT: ${UPLOAD_RATE_LIMIT:-10}
+      STORAGE_PATH: /var/www/html/var/uploads
+      CHUNK_STORAGE_PATH: /var/www/html/var/chunks
+      ALLOWED_IMAGE_TYPES: ${ALLOWED_IMAGE_TYPES:-image/jpeg,image/png,image/gif,image/webp}
+      ALLOWED_VIDEO_TYPES: ${ALLOWED_VIDEO_TYPES:-video/mp4,video/mpeg,video/quicktime,video/webm}
+
     depends_on:
       - redis
     networks:
@@ -51,4 +55,3 @@ volumes:
 networks:
   media-upload-network:
     driver: bridge
-

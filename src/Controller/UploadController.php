@@ -6,6 +6,7 @@ use App\Service\ChunkStorageService;
 use App\Service\FileValidationService;
 use App\Service\RateLimitService;
 use App\Service\StorageService;
+use Predis\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,6 +22,7 @@ class UploadController extends AbstractController
         private readonly FileValidationService $fileValidation,
         private readonly StorageService $storage,
         private readonly RateLimitService $rateLimit,
+        private readonly ClientInterface $redis,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -30,12 +32,16 @@ class UploadController extends AbstractController
     {
         try {
             // Rate limiting
+            $this->logger->info('hello1');
             if (!$this->rateLimit->checkRateLimit($request)) {
                 return $this->json([
                     'error' => 'Rate limit exceeded',
                     'message' => 'Too many requests. Please try again later.'
                 ], Response::HTTP_TOO_MANY_REQUESTS);
             }
+
+            $this->logger->info('hello2');
+
 
             $data = json_decode($request->getContent(), true);
 
@@ -56,11 +62,25 @@ class UploadController extends AbstractController
                 ], Response::HTTP_BAD_REQUEST);
             }
 
-            // Generate upload ID
-            $uploadId = uniqid('upload_', true);
+            // Generate upload ID without dots to avoid routing issues
+            // Format: upload_timestamp_randomhex
+            $uploadId = 'upload_' . time() . '_' . bin2hex(random_bytes(8));
 
             // Initialize upload in Redis
             $this->chunkStorage->initializeUpload($uploadId, $data);
+
+            // Track total uploads metric
+            try {
+                $this->redis->incr('metrics:total_uploads');
+                $this->logger->info('Incremented total_uploads metric', [
+                    'upload_id' => $uploadId,
+                    'new_value' => $this->redis->get('metrics:total_uploads')
+                ]);
+            } catch (\Exception $e) {
+                $this->logger->error('Failed to increment total_uploads metric', [
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             $this->logger->info('Upload initiated', [
                 'upload_id' => $uploadId,
@@ -94,68 +114,94 @@ class UploadController extends AbstractController
     #[Route('/chunk', name: 'chunk', methods: ['POST'])]
     public function uploadChunk(Request $request): JsonResponse
     {
+        $startTime = microtime(true);
+        
+        // Close session immediately
+        if ($request->hasSession() && $request->getSession()->isStarted()) {
+            $request->getSession()->save();
+        }
+        @session_write_close();
+        
+        // No time limit
+        set_time_limit(0);
+        
+        $uploadId = $request->request->get('upload_id');
+        $chunkIndex = $request->request->getInt('chunk_index');
+        $file = $request->files->get('chunk');
+
         try {
-            // Rate limiting
-            if (!$this->rateLimit->checkRateLimit($request)) {
-                return $this->json([
-                    'error' => 'Rate limit exceeded'
-                ], Response::HTTP_TOO_MANY_REQUESTS);
-            }
-
-            $uploadId = $request->request->get('upload_id');
-            $chunkIndex = (int)$request->request->get('chunk_index');
-            $file = $request->files->get('chunk');
-
+            // Validate input
             if (!$uploadId || $chunkIndex < 0 || !$file) {
                 return $this->json([
                     'error' => 'Invalid request',
-                    'message' => 'upload_id, chunk_index, and chunk file are required'
+                    'message' => 'upload_id, chunk_index, and chunk file are required',
                 ], Response::HTTP_BAD_REQUEST);
             }
 
-            // Verify upload exists
+            // Check upload session
             $status = $this->chunkStorage->getUploadStatus($uploadId);
-
+            
+            $this->logger->info('Upload status checked', [
+                'exists' => $status !== null,
+                'time' => microtime(true) - $startTime
+            ]);
+            
             if (!$status) {
                 return $this->json([
                     'error' => 'Upload not found',
-                    'message' => 'Upload session does not exist or has expired'
                 ], Response::HTTP_NOT_FOUND);
             }
 
-            // Check if chunk already uploaded
+            // Check duplicate
             if (in_array($chunkIndex, $status['uploaded_chunks'], true)) {
+                $this->logger->info('Duplicate chunk detected', [
+                    'upload_id' => $uploadId,
+                    'chunk_index' => $chunkIndex
+                ]);
+                
                 return $this->json([
                     'message' => 'Chunk already uploaded',
-                    'chunk_index' => $chunkIndex
+                    'chunk_index' => $chunkIndex,
                 ], Response::HTTP_OK);
             }
 
-            // Save chunk
+            // Read and save chunk
             $chunkData = file_get_contents($file->getPathname());
+            
+            $this->logger->info('Chunk data read', [
+                'size' => strlen($chunkData),
+                'time' => microtime(true) - $startTime
+            ]);
+            
             $this->chunkStorage->saveChunk($uploadId, $chunkIndex, $chunkData);
 
-            $updatedStatus = $this->chunkStorage->getUploadStatus($uploadId);
-            $progress = count($updatedStatus['uploaded_chunks']) / $updatedStatus['total_chunks'] * 100;
+            $totalTime = microtime(true) - $startTime;
+            
+            $this->logger->info('<<< CHUNK SAVED SUCCESSFULLY', [
+                'upload_id' => $uploadId,
+                'chunk_index' => $chunkIndex,
+                'total_time' => $totalTime,
+                'memory_peak' => memory_get_peak_usage(true)
+            ]);
 
             return $this->json([
                 'message' => 'Chunk uploaded successfully',
                 'chunk_index' => $chunkIndex,
-                'progress' => round($progress, 2),
-                'uploaded_chunks' => count($updatedStatus['uploaded_chunks']),
-                'total_chunks' => $updatedStatus['total_chunks']
+                'processing_time' => round($totalTime, 3),
             ], Response::HTTP_OK);
 
         } catch (\Exception $e) {
-            $this->logger->error('Failed to upload chunk', [
+            $this->logger->error('<<< CHUNK UPLOAD FAILED', [
                 'upload_id' => $uploadId ?? 'unknown',
                 'chunk_index' => $chunkIndex ?? -1,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'time' => microtime(true) - $startTime,
+                'trace' => $e->getTraceAsString()
             ]);
 
             return $this->json([
                 'error' => 'Failed to upload chunk',
-                'message' => $e->getMessage()
+                'message' => $e->getMessage(),
             ], Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
@@ -210,6 +256,19 @@ class UploadController extends AbstractController
                 unlink($tempFile);
                 $this->chunkStorage->cleanupChunks($uploadId);
                 
+                // Track successful upload (duplicate is also a successful completion)
+                try {
+                    $this->redis->incr('metrics:successful_uploads');
+                    $this->logger->info('Incremented successful_uploads metric (duplicate)', [
+                        'upload_id' => $uploadId,
+                        'new_value' => $this->redis->get('metrics:successful_uploads')
+                    ]);
+                } catch (\Exception $e) {
+                    $this->logger->error('Failed to increment successful_uploads metric', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+                
                 $this->logger->info('Duplicate file detected', [
                     'upload_id' => $uploadId,
                     'md5' => $md5,
@@ -229,6 +288,19 @@ class UploadController extends AbstractController
 
             // Cleanup chunks
             $this->chunkStorage->cleanupChunks($uploadId);
+
+            // Track successful upload
+            try {
+                $this->redis->incr('metrics:successful_uploads');
+                $this->logger->info('Incremented successful_uploads metric', [
+                    'upload_id' => $uploadId,
+                    'new_value' => $this->redis->get('metrics:successful_uploads')
+                ]);
+            } catch (\Exception $e) {
+                $this->logger->error('Failed to increment successful_uploads metric', [
+                    'error' => $e->getMessage()
+                ]);
+            }
 
             $this->logger->info('Upload finalized', [
                 'upload_id' => $uploadId,
